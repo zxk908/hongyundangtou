@@ -1,0 +1,504 @@
+---
+title: "R programming assignment and report"
+author: "zxk908"
+date: "2023-06-16"
+documentclass: ctexart
+
+output:
+  prettydoc::html_pretty:
+    theme: cayman
+    highlight: github
+vignette: >
+  %\VignetteIndexEntry{Vignette Title}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{css, echo=FALSE}
+pre code, pre, code {
+  white-space: pre !important;
+  word-break: keep-all !important;
+  word-wrap: initial !important;
+  overflow-x: auto;
+}
+
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+大概是在五月初的时候，我旁听了一门来自Johns Hopkins大学有关R语言的线上课程[R Programming](https://www.coursera.org/learn/r-programming)。课程中布置了一些作业，近两天我花了一些时间完成了其中两项作业，这是我第一次用R写代码并完成作业。我本来以为这些作业会很难完成，所以刻意把它们留到最后才完成。不过令我没想到的是，虽然运行代码的过程中遇到了很多次错误，但我仍然觉得很开心，或许是因为R语言本身就具有某种魅力吧。
+
+本文分为三大部分，分别为任务2：Air Pollution、任务3：Hospital Quality和最后一丢丢补充。在任务2中编写了3个函数，分别是在指定工作目录下计算特定监测点的平均污染物含量的pollutantmean函数、在指定的工作目录下计算特定监测点完整的观测次数的```complete```函数和计算在指定工作目录下在完整观测次数的阈值之上的文件中硫酸盐含量和硝酸盐含量的相关系数的```corr```函数。在任务3中同样编写了3个函数，其中包括：在某一个州的所有医院中，因特定类型疾病发作造成的30天死亡率最低的医院名称的```best```函数、对某一个州所有医院的死亡率由低到高进行排名的```rankhosptial```函数和对所有医院按州分类并进行排名的函数```rankall```。在最后的一点补充当中，介绍了用sapply函数改进的```complete_imp```函数和```corr_imp```函数。
+
+# Air Pollution
+
+在assignment 2 中，数据文件中包含了美国332个不同监测点检测出的空气污染数据，共有332个csv文件，其中每一个csv文件对应一个监测点的数据。每个csv文件中包含4个变量：记录日期（Date）、硫酸盐含量（sulfate）、硝酸盐含量（nitrate）和监测点（id）。比如，001.csv文件中的部分数据为：
+
+```{r, echo = FALSE}
+disapper <- ifelse(grepl("specdata", getwd()), 0, setwd("specdata")) 
+frame <- read.csv(file = "001.csv", header = TRUE, stringsAsFactors = FALSE)
+str(frame)
+```
+
+
+作业要求编写三个函数，每个函数用于解决不同的问题。
+
+## pollutantmean函数
+
+函数```pollutantmean```用于计算特定监测点的平均污染物含量，它包括三个参数：文件目录（```directory```）、污染物类型（```pollutant```）和监测点```id```.比如，```pollutantmean("specdata", "sulfate", 1:10)```表示计算specdata文件中第1至10个监测点的平均硫酸盐含量（不计NA值）。
+
+代码如下：
+
+```{r}
+pollutantmean <- function(directory, pollutant, id = 1:332) {
+        ifelse(grepl(directory, getwd()), 0, setwd(directory))  #判断当前目录是否为函数参数中的目录，若不是，设置目录为directory
+        dir <- list.files(getwd())    #list.files命令将现有工作目录下所有文件名输入dir
+        sum_poll <- 0
+        n_poll <- 0
+        for (i in id) {
+                frame <- read.csv(file = dir[i], header = TRUE, stringsAsFactors = FALSE)
+                sum_poll <- sum(frame[,pollutant], na.rm = TRUE) + sum_poll  #求出污染物含量的总和
+                n_poll <- sum(!is.na(frame[,pollutant])) + n_poll  #求出总观测次数
+                }
+        sum_poll/n_poll  #计算平均值
+}
+```
+
+首先我们需要找到数据文件夹，并将其设置为R当前的工作目录。我最先考虑的是直接用```setwd(directory)```设置工作目录，但是当数据文件夹已经在工作目录中时，仅仅通过```setwd(directory)```设置会出现错误，于是用```ifelse```判断当前目录是否为函数参数```directory```，根据判断结果决定是否需要重新设置工作目录。
+
+接下来，我们需要求得不同的csv文件中，某种污染物类型的平均含量。以求第1至10个监测点的平均硫酸盐含量为例，我们需要将第1至10个csv文件中第二列的所有数据汇总并求出它们的平均值，但是原始数据分散在10个不同的文件中，于时构建```for```循环汇总求出污染物含量的总和以及不计NA值的总观测次数，最后计算平均值。在这个过程中，我们将读取文件的函数放在```for```循环中，只读取所需要计算的csv文件，无需读取全部文件。
+
+以下是部分代码运行的示例，与demo完全一致：
+
+```{r}
+pollutantmean("specdata", "sulfate", 1:10)
+```
+
+```{r}
+pollutantmean("specdata", "nitrate", 70:72)
+```
+
+```{r}
+pollutantmean("specdata", "nitrate", 23)
+```
+
+
+## complete函数
+
+函数```complete```用于在指定的工作目录下计算特定监测点完整的观测次数（除去污染物含量为NA值外的观测次数），它包括两个参数：文件目录（```directory```）和监测点```id```。```complete```函数将会返回一个数据框，第一列为监测点```id```，第二列为完整的观测次数（nobs）。比如，```complete("specdata", c(2, 4, 8, 10, 12))```表示计算specdata文件中的第2、4、8、10和12个监测点的完整观测次数。
+
+代码如下：
+
+```{r}
+complete <- function(directory, id = 1:332){
+        ifelse(grepl(directory, getwd()), 0, setwd(directory))   #判断现有目录是否为函数参数中的目录,若不是，设置目录为directory
+        dir <- list.files(getwd())    #list.files命令将现有工作目录下所有文件名输入dir       
+        frame_comp <- data.frame(id = numeric(length(id)), nobs = numeric(length(id)))  #给定一个数据框放置结果
+        j <- 1
+        for (i in id) {
+                frame <- read.csv(file = dir[i], header = TRUE, stringsAsFactors = FALSE)
+                sum_sulf <- sum(!is.na(frame[,"sulfate"]))   #硫酸盐含量的非NA值的个数
+                sum_nitr <- sum(!is.na(frame[,"nitrate"]))   #硝酸盐含量的非NA值的个数
+                frame_comp[j,2] <- ifelse(sum_sulf == sum_nitr, sum_nitr, min(sum_sulf, sum_nitr))
+                #判断sulfate中的可取值个数与nitrate中的可取值个数是否相等，若不等则取较小的一个值
+                frame_comp[j,1] <- i
+                j <- j+1
+                }
+        frame_comp
+} 
+```
+
+寻找函数指定工作目录的方法与```pollutantmean```函数中的方法一致。在寻找完整观测次数时，首先计算出读取文件中硫酸盐含量和硝酸盐含量的非NA值的个数。这里运用了逻辑值中TRUE的值为1，而FALSE的值为0，对逻辑值求和得到了非NA值的个数。但是我们并不知道每一个文件中硫酸盐含量和硝酸盐含量的非NA值的个数是否一致，所以通过```ifelse```语句判断其是否一致，在不一致的情况下取较小值。通过构建```for```循环，就可以计算出指定监测点id的完整观测次数。但是，函数返回的结果并不能按照顺序放入数据框。比如，```complete("specdata", c(2, 4, 8, 10, 12))```中第一个计算出的是002.csv中完整的观测次数，但是它应该放在数据框第一行。于是我们指定一个变量```j```，用来记录数据应该放入数据框的哪一行。
+
+以下是部分代码运行的示例，与demo完全一致：
+
+```{r}
+complete("specdata", c(2, 4, 8, 10, 12))
+```
+
+```{r}
+complete("specdata", 30:25)
+```
+
+```{r}
+complete("specdata", 3)
+```
+
+## corr函数
+
+函数```corr```用于计算在指定工作目录下在完整观测次数的阈值之上的文件中硫酸盐含量和硝酸盐含量的相关系数。该函数应返回满足阈值要求的监视器的相关系数向量，如果没有监视器满足阈值要求，则该函数应返回长度为 0 的数值向量。比如，```corr("specdata", 150)```表示计算specdata文件夹下完整观测次数在150以上的文件中，硫酸盐含量和硝酸盐含量的相关系数向量。
+
+补充：相关系数的计算公式为
+$$r = \frac{Cov(X,Y)}{\sqrt{Var{(X)}}\sqrt{Var{(Y)}}} = \frac{n\sum xy - \sum x\sum y}{\sqrt{n\sum x^2 - (\sum x)^2}\cdot\sqrt{n\sum y^2 - (\sum y)^2}}$$
+
+代码如下：
+
+```{r}
+corr <- function(directory, threshold = 0){
+        frame_comp <- complete(directory) 
+        frame_corr <- frame_comp[frame_comp[,2] >= threshold,]  #选出大于阈值的id
+        cor_r <- numeric(nrow(frame_corr))
+        dir <- list.files(getwd())    #list.files命令将现有工作目录下所有文件名输入dir   
+        j <- 1
+        for (i in frame_corr[,1]) {
+                frame <- read.csv(file = dir[i], header = TRUE, stringsAsFactors = FALSE)
+                cor_r[j] <- cor(frame[,"sulfate"], frame[,"nitrate"], use = "pairwise.complete.obs")
+                j <- j + 1
+        }
+        corr <- cor_r[!is.na(cor_r)]  #去除可能有的NA值
+}
+```
+
+因为该函数的参数之一是完整观测次数，故我们首先要筛选出哪些文件满足计算相关系数条件即完整观测次数大于阈值。运用```complete```函数计算出specdata文件夹下所有文件的完整观测次数，并筛选出大于阈值的监测点文件id。由于在```complete```函数中我们已经将工作目录设置为specdata文件夹，故不用再判断或者更改工作目录了，直接使用现有工作目录即可。接下来，构建```for```循环将满足阈值要求的监测点文件读入R，并计算硫酸盐含量和硝酸盐含量的相关系数。在计算相关系数时，由于原始数据中包含NA值，所以使用参数 ```use = "pairwise.complete.obs"```在计算中排除NA值。与```complete```函数类似，在```for```循环中我设计了变量```j```来记录每一个得到的相关系数应该放在相关系数向量中的哪一个位置。
+
+以下是部分代码运行的示例：
+
+```{r}
+cr <- corr("specdata", 150)
+head(cr)
+```
+
+```{r}
+summary(cr)
+```
+
+
+代码得到的结果与demo不同，推测原因为R在计算时舍入浮点数时与示例运算方式存在不同。
+
+```{r}
+cr <- corr("specdata", 400)
+head(cr)
+```
+
+```{r}
+summary(cr)
+```
+
+```{r}
+cr <- corr("specdata", 5000)
+summary(cr)
+```
+
+```{r}
+length(cr)
+```
+
+```{r}
+cr <- corr("specdata")
+summary(cr)
+```
+
+在计算结果中，原来的代码出现了一些NA值，将其剔除后得到了与demo一致的结果。
+
+```{r}
+length(cr)
+```
+
+
+
+
+# Hospital Quality
+
+在assignment 3 中，数据文件outcome-of-care-measures.csv中包含了包含了关于4000多家医院的心脏病发作（heart attacks）、心力衰竭（heart failure）和肺炎（ pneumonia）的30天死亡率和再入院率的信息。数据文件outcome-of-care-measures.csv中包含47个变量，部分数据如下所示：
+
+```{r, echo = FALSE}
+outcome <- read.csv("outcome-of-care-measures.csv", colClasses = "character")
+str(outcome)
+```
+
+但是在编写函数的过程中，函数参数只涉及到5个变量：医院名称（Hospital Name）、医院所在州（State）、医院因心脏病发作造成的30天内死亡率（Hospital 30-Day Death (Mortality) Rates from Heart Attack）、医院因心力衰竭造成的30天内死亡率（Hospital 30-Day Death (Mortality) Rates from Heart Failure）和医院因肺炎造成的30天内死亡率（Hospital 30-Day Death (Mortality) Rates from Pneumonia）。通过画出医院因心脏病发作造成的30天死亡率，我们可以对数据有一个直观的认识。
+
+```{r, echo = FALSE, warning=FALSE,fig.align = 'center'}
+outcome[, 11] <- as.numeric(outcome[, 11])
+hist(outcome[, 11], main='医院因心脏病发作造成的30天死亡率', xlab='', ylab='频数')
+```
+
+## Finding the best hospital in a state
+
+函数```best```用于计算某一个州的所有医院中，因特定类型疾病发作造成的30天死亡率最低的医院名称，它包括两个参数：医院所在州的缩写（state）和疾病名称（outcome）。该函数应该返回医院名称，比如，```best("TX", "heart attack")```应该返回缩写为TX的州中因心脏病发作造成的30天内死亡率最低的医院。
+
+代码如下：
+
+```{r}
+best <- function(state, outcome){
+        data_out <- read.csv("outcome-of-care-measures.csv", stringsAsFactors = FALSE)     #读取数据并判断输入参数是否无效
+        ifelse(state %in% data_out$State, 0, stop("invalid state."))
+        ifelse(outcome %in% c("heart attack", "heart failure", "pneumonia"), 0, stop("invalid outcome."))
+        
+        data_compute <- data_out[data_out$State == state, c(2, 7, 11, 17, 23)]  #从读取的数据框中选择稍后会用到的数据（限定州和相应的列）
+        names(data_compute) <- c("name", "state", "heart attack", "heart failure", "pneumonia")
+        
+        outcome_min <- min(data_compute[, outcome], na.rm = TRUE)   #找到最小值
+        index_min <- which(data_compute[,outcome] == outcome_min)   #找到最小值的下标
+        
+        hosp_name <- data_compute[index_min, "name"] #找出死亡率达到最小值的医院
+        hosp_name <- sort(hosp_name) ##按字母序排列
+        hosp_name[1]
+       
+}
+       
+
+```
+
+首先我们判断输入的函数参数是否为数据文件中包含的参数。比如，在``` best("BB", "heart attack")```中，数据文件并不包括缩写为BB的州，应该返回错误。接下来从读取的数据中将满足特定参数（州缩写和疾病类型）的数据筛选出来。
+
+因为```outcome``` 列中包含NA值，所以在计算最小值的时候，使用参数```na.rm = TRUE```消除NA值对计算最小值的影响。
+
+在编写```best```函数的过程中，寻找最小值的部分我写了三种不同方法的代码来寻求死亡率最小值，最终呈现的版本也是最简单最清晰的版本。但是如果我一开始就知道```min```函数可以使用参数```na.rm = TRUE```计算最小值，或许也就不用多花时间和精力在另外两种方法上了。这给我提了一个醒，在R中，一定要对自己使用的函数及其参数进行查阅。大部分函数是不是都有关于处理NA值的参数？
+
+另外，当两家或多家医院的死亡率相等时，按照要求用```sort```函数对医院按字母序排列。
+
+以下是部分代码运行的示例：
+
+```{r}
+best("TX", "heart attack")
+```
+
+
+```{r}
+best("TX", "heart failure")
+```
+
+```{r}
+best("MD", "heart attack")
+```
+
+```{r}
+best("MD", "pneumonia")
+```
+
+```{r,error=TRUE}
+best("BB", "heart attack")
+```
+
+```{r,error=TRUE}
+best("NY", "hert attack")
+```
+
+## Ranking hospitals by outcome in a state
+
+编写函数```rankhospital```对某一个州所有医院的死亡率由低到高进行排名，若两家或多家医院死亡率相同，则按照字母序排列。该函数包含3个参数：医院所在州的缩写（state）、疾病名称（outcome）和医院排名（num）。其中，医院排名除了数字之外，还包括字符best和worst。该函数应该返回在某一个州内处于特定排名的医院名称，比如，```rankhospital("TX", "heart failure", 4)```表示找出医院所在州的缩写为TX且因心力衰竭造成的30天内死亡率排名第4的医院名称。
+
+代码如下：
+
+```{r}
+rankhospital <- function(state, outcome, num = "best") {
+        data_out <- read.csv("outcome-of-care-measures.csv", stringsAsFactors = FALSE)     #读取数据并判断输入参数是否无效
+        ifelse(state %in% data_out$State, 0, stop("invalid state."))
+        ifelse(outcome %in% c("heart attack", "heart failure", "pneumonia"), 0, stop("invalid outcome."))
+  
+        data_compute <- data_out[data_out$State == state, c(2, 7, 11, 17, 23)]  #从读取的数据框中选择稍后会用到的数据（限定州和相应的列）
+        names(data_compute) <- c("name", "state", "heart attack", "heart failure", "pneumonia")
+        row.names(data_compute) <- 1:nrow(data_compute)  #重新命名行名，使行名从1开始
+       
+        data_compute[, outcome] <- as.numeric(data_compute[, outcome]) #下面的函数is.na需要将其转化为数值形比较
+        index_num <- sum(!is.na(data_compute[, outcome]))  #计算非na值的个数
+        ifelse(num == "best", num <- 1, 0)     #将best 和 worst转化为数值形式
+        ifelse(num == "worst", num <- index_num, 0) 
+       
+        order_be <- order(data_compute[, outcome], data_compute[, "name"])  #先按照outcome列排序，而后按照name列排序
+        data_result <- data_compute[order_be[num], "name"]
+        data_result
+}
+```
+  
+与```best```函数类似，我们需要先判断输入的参数是否有效，并且根据参数```state```和```outcome```筛选出所需的数据。 不过为了方便后续对医院进行排名，我们将筛选出的数据所构成的数据框```data_compute```的行号从1开始重新命名。这么做是因为最后用```order```函数计算排名后返回的排名为向量中的相对位置而非数据框```data_compute```的行号，而最后我们需要根据```data_compute```的行号来确定医院的名称。比如，```rankhospital("TX", "heart failure", 4)```中，目标医院DETAR HOSPITAL NAVARRO在数据框```data_compute```中的行号为3954，而```order```函数给出的排名在向量中的位置为61。因此，我们将数据框```data_compute```的行号从1开始重新命名，让```order```函数计算后返回的排名在向量中的相对位置和数据框```data_compute```的行号一致，如此就可以通过数据框行号准确的定位目标医院在数据框中的位置了。```order```函数的参数```na.last = TRUE```可以保证在排序时将NA值放在序列最后。
+
+另外，因为排名不仅包括数字，还包括字符best和worst。我们需要将这两个字符分别转化为数字。通过```ifelse```语句判断```num```参数是否为字符best或worst，然后决定是否要赋予```num```相应的数值。
+
+以下是部分代码运行的示例：
+
+```{r,warning=FALSE}
+rankhospital("TX", "heart failure", 4)
+```
+
+```{r,warning=FALSE}
+rankhospital("MD", "heart attack", "worst")
+```
+
+```{r,warning=FALSE}
+rankhospital("MN", "heart attack", 5000)
+```
+
+
+## Ranking hospitals in all states
+
+编写函数```rankall```对所有医院按州分类并进行排名。该函数包括两个参数：疾病名称（outcome）和医院排名（num）。其中，医院排名除了数字之外，还包括字符best和worst。该函数返回56个州的英文缩写以及每个州中占特定排名的医院名称构成的数据框，比如，```rankall("heart attack", 20)```表示找出56个州中因心脏病发作造成的30天内死亡率在医院所在州占第20位的医院名称。
+
+代码如下：
+
+```{r}
+rankall <- function(outcome, num = "best") {
+        ## Read outcome data
+        data_out <- read.csv("outcome-of-care-measures.csv", stringsAsFactors = FALSE)     #读取数据
+        data_compute <- data_out[, c(2, 7, 11, 17, 23)]  #从读取的数据框中选择稍后会用到的数据（限定州和相应的列）
+        names(data_compute) <- c("name", "state", "heart attack", "heart failure", "pneumonia")
+        
+        ## For each state, find the hospital of the given rank
+        state <- sort(unique(data_compute$state))  #查找所有的州名称并按字母序排列
+        rank_find <- sapply(state, rankhospital, outcome = outcome, num =  num)
+        
+        ## Return a data frame with the hospital names and the (abbreviated) state name
+        rank_result <- data.frame(hosptial = rank_find, state = names(rank_find))
+}
+```
+
+我们发现，函数```rankall```期望的结果看上去像是把参数```outcome```和```num```传递给函数```rankhosptial```计算出来的结果，其中参数```state```为56个州的英文缩写构成的向量。但是，如果我们直接使用函数```rankhosptial```进行上述计算，却不能得到我们期望的结果。比如```rankhospital(c("TX","MD"), "heart failure", 4)```得到的结果只有一家医院BAYLOR ALL SAINTS MEDICAL CENTER AT FW。这是因为该函数计算的是医院所在州的缩写为TX和MD的、因心力衰竭造成的30天内死亡率排名第4的医院名称，而并非是分别计算医院所在州的缩写为TX且因心力衰竭造成的30天内死亡率排名第4的医院名称、医院所在州的缩写为MD且因心力衰竭造成的30天内死亡率排名第4的医院名称。
+
+于是我想到了sapply函数。运用sapply函数将参数```state```向量化，最后将结果整理成数据框的形式输出即可。在输出的数据框中，为了让医院名称按照州英文缩写的字母序排列，我们在运用sapply函数计算之前，先用```sort```函数将所有州英文缩写按照字母序排列。
+
+以下是部分代码运行的示例：
+
+```{r,warning=FALSE}
+ head(rankall("heart attack", 20), 10)
+```
+
+```{r,warning=FALSE}
+tail(rankall("pneumonia", "worst"), 3)
+```
+
+```{r,warning=FALSE}
+tail(rankall("heart failure"), 10)
+```
+
+
+# 一丢丢补充
+
+受到由函数```rankhospital```构造```rankall```方法的启发，我们同样也可以应用sapply函数来构造Air pollution中的```complete```函数和```corr```函数。
+
+对于```complete```函数改进后的函数，代码如下：
+
+```{r}
+complete_sub <- function(dir, id){
+        frame <- read.csv(file = dir[id], header = TRUE, stringsAsFactors = FALSE)
+        sum_sulf <- sum(!is.na(frame[,"sulfate"]))   #硫酸盐含量的非NA值的个数
+        sum_nitr <- sum(!is.na(frame[,"nitrate"]))   #硝酸盐含量的非NA值的个数
+        frame_comp <- ifelse(sum_sulf == sum_nitr, sum_nitr, min(sum_sulf, sum_nitr))
+        #判断sulfate中的可取值个数与nitrate中的可取值个数是否相等，若不等则取较小的一个值
+        frame_comp
+}
+  
+
+complete_imp <- function(directory, id = 1:332){
+        ifelse(grepl(directory, getwd()), 0, setwd(directory))   #判断现有目录是否为函数参数中的目录,若不是，设置目录为directory  
+        dir <- list.files(getwd())    #list.files命令将现有工作目录下所有文件名输入dir    
+        nobs <- sapply(id, complete_sub, dir = dir)
+        as.data.frame(cbind(id, nobs))
+}
+
+```
+
+其中，如果输入的参数```id```是一个向量，那么```complete_sub```函数也会得到一个向量，它由对应id的完整观测次数组成（nobs）。最后再使用```cbind```函数和```as.data.frame```函数将参数```id```与```nobs```按列绑定并转换为数据框。
+
+比较改进前后的函数之后我们可以发现，运行结果并没有差异。
+```{r}
+complete_imp("specdata", c(2, 4, 8, 10, 12))
+```
+
+```{r}
+complete_imp("specdata", 3)
+```
+
+或许是因为程序并不长，运用上述改进的方法和初始的方法运行同样的程序在时间上的差别并不大。
+
+
+```{r}
+ptm <- proc.time()
+complete_imp("specdata", 30:25)
+t1 <- proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+complete("specdata", 30:25)
+t2 <- proc.time() - ptm
+```
+
+```{r}
+t2 - t1
+```
+
+
+对于```corr```函数改进后的函数，代码如下：
+
+```{r}
+corr_sub <- function(vec_id, threshold){
+        dir <- list.files(getwd())    #list.files命令将现有工作目录下所有文件名输入dir 
+        frame <- read.csv(file = dir[vec_id], header = TRUE, stringsAsFactors = FALSE)
+        corr<- cor(frame[,"sulfate"], frame[,"nitrate"], use = "pairwise.complete.obs")
+}
+
+corr_imp <- function(directory, threshold = 0){
+        frame_comp <- complete_imp(directory)   ##计算所有监测点的完整观测次数
+        vec_id <- frame_comp[frame_comp[,2] >= threshold, 1]  #选出大于阈值的id
+        corr <- sapply(vec_id, corr_sub, threshold = threshold)
+        corr <- corr[!is.na(corr)]  #去除可能有的NA值
+}
+```
+
+在调试程序的过程中，我们发现计算相关向量时，某些监测点的数据文件中完整观测次数为0，从而导致该文件计算出的相关向量值为NA。因此，我们在计算出相关向量之后还要剔除NA值。比较改进前后的函数之后我们发现，运行结果并没有差异。
+
+```{r}
+cr <- corr_imp("specdata", 150)
+head(cr)
+```
+
+```{r}
+summary(cr)
+```
+
+代码得到的结果与demo不同，但是与改进前的函数结果相同，推测原因为R在计算时舍入浮点数时与示例运算方式存在不同。
+
+```{r}
+cr <- corr_imp("specdata", 400)
+head(cr)
+```
+
+```{r}
+summary(cr)
+```
+
+```{r}
+cr <- corr_imp("specdata", 5000)
+summary(cr)
+```
+
+```{r}
+length(cr)
+```
+
+```{r}
+cr <- corr_imp("specdata")
+summary(cr)
+```
+
+```{r}
+length(cr)
+```
+
+因为在应用```corr```函数的过程中调用了改进后的```complete_imp函数，在计算速度上比更快，可能因为数据集并不大，所以差距也不太明显。
+```{r}
+ptm <- proc.time()
+cr <- corr_imp("specdata")
+head(cr)
+t1 <- proc.time() - ptm
+```
+
+```{r}
+ptm <- proc.time()
+cr <- corr("specdata")
+head(cr)
+t2 <- proc.time() - ptm
+```
+
+```{r}
+t2 - t1
+```
+
+
+
+
+
